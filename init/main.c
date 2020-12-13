@@ -283,8 +283,8 @@ static int set_project_id(char *str)
 {
         if ( strcmp("0", str) == 0 )
         {
-                g_ASUS_prjID = PROJECT_OBIWAN_CN;
-                printk("Kernel PROJECT ID = ZS661KS_CN\n");
+                g_ASUS_prjID = PROJECT_OBIWAN_WW;
+                printk("Kernel PROJECT ID = ZS661KS_CN converted to WW\n");
         }else if ( strcmp("1", str) == 0 )
         {
                 g_ASUS_prjID = PROJECT_OBIWAN_WW;
