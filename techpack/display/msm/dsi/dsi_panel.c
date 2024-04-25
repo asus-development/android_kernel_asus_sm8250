@@ -34,6 +34,13 @@
 #define DEFAULT_PANEL_PREFILL_LINES	25
 #define MIN_PREFILL_LINES      35
 
+extern int asus_current_fps;
+extern bool asus_display_in_normal_off(void);
+extern void asus_display_set_tcon_cmd(char *cmd, short len, int type);
+extern bool asus_display_in_aod(void);
+
+int zs670ks_aod_bl_mode = 0;
+
 enum dsi_dsc_ratio_type {
 	DSC_8BPC_8BPP,
 	DSC_10BPC_8BPP,
@@ -452,12 +459,24 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
 
+	DSI_DEBUG("[Display] panel power on +++\n");
+
 	rc = dsi_pwr_enable_regulator(&panel->power_info, true);
 	if (rc) {
 		DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
 				panel->name, rc);
 		goto exit;
 	}
+
+	if (gpio_is_valid(panel->vddr_enable_gpio)) {
+		rc = gpio_direction_output(panel->vddr_enable_gpio, 1);
+		if (rc) {
+			DSI_ERR("unable to set dir for vddr enable gpio rc=%d\n", rc);
+			goto err_disable_vddr_enable;
+		}
+	}
+
+	msleep(8);
 
 	rc = dsi_panel_set_pinctrl_state(panel, true);
 	if (rc) {
@@ -482,16 +501,26 @@ error_disable_gpio:
 
 	(void)dsi_panel_set_pinctrl_state(panel, false);
 
+err_disable_vddr_enable:
+	if (gpio_is_valid(panel->vddr_enable_gpio))
+		gpio_set_value(panel->vddr_enable_gpio, 0);
+
 error_disable_vregs:
 	(void)dsi_pwr_enable_regulator(&panel->power_info, false);
 
 exit:
+	DSI_DEBUG("[Display] panel power on ---\n");
 	return rc;
 }
 
+extern struct timer_list unattended_timer; /* unattended_timer_expired() kernel/kernel/power/suspend.c*/
 static int dsi_panel_power_off(struct dsi_panel *panel)
 {
 	int rc = 0;
+
+	DSI_DEBUG("[Display] panel power off +++\n");
+
+	mod_timer(&unattended_timer, jiffies + msecs_to_jiffies(1000*60*5));
 
 	if (gpio_is_valid(panel->reset_config.disp_en_gpio))
 		gpio_set_value(panel->reset_config.disp_en_gpio, 0);
@@ -516,10 +545,15 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		       rc);
 	}
 
+	if (gpio_is_valid(panel->vddr_enable_gpio))
+		gpio_set_value(panel->vddr_enable_gpio, 0);
+
 	rc = dsi_pwr_enable_regulator(&panel->power_info, false);
 	if (rc)
 		DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
 				panel->name, rc);
+
+	DSI_DEBUG("[Display] panel power off ---\n");
 
 	return rc;
 }
@@ -638,6 +672,35 @@ static int dsi_panel_wled_register(struct dsi_panel *panel,
 	return 0;
 }
 
+int asus_judge_aod_backlight(struct dsi_panel *panel,int bl_lvl)
+{
+	const int aod_bl_thres = 65;
+	int ret = 0;
+	int rc = 0;
+
+	if (asus_display_in_aod()) {
+		if (bl_lvl >= aod_bl_thres) {
+			ret = 1;
+			pr_err("[Display] aod lux over 65\n");
+			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_AOD_LP1);
+		} else if((bl_lvl < aod_bl_thres)&& (bl_lvl > 1)){
+			ret = 0;
+			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
+			pr_err("[Display] aod lux blew 65\n");
+		}else {
+			pr_err("[Display] aod bl_lvl is %d ,set ret = 255!\n",bl_lvl);
+			ret = 255;
+		}
+	} else {
+		DSI_DEBUG("[Display] is not in aod mode\n");
+		ret = 255;
+	}
+
+	DSI_DEBUG("[Display] asus_judge_aod_backlight ret = %d\n",ret);
+
+	return ret;
+}
+
 static int dsi_panel_dcs_set_display_brightness_c2(struct mipi_dsi_device *dsi,
 			u32 bl_lvl)
 {
@@ -654,7 +717,7 @@ static int dsi_panel_dcs_set_display_brightness_c2(struct mipi_dsi_device *dsi,
 
 
 
-static int dsi_panel_update_backlight(struct dsi_panel *panel,
+int dsi_panel_update_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
 {
 	int rc = 0;
@@ -669,8 +732,12 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	dsi = &panel->mipi_device;
 	bl = &panel->bl_config;
 
+/*
 	if (panel->bl_config.bl_inverted_dbv)
 		bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
+*/
+
+	zs670ks_aod_bl_mode = asus_judge_aod_backlight(panel,bl_lvl);
 
 	if (panel->bl_config.bl_dcs_subtype == 0xc2)
 		rc = dsi_panel_dcs_set_display_brightness_c2(dsi, bl_lvl);
@@ -682,6 +749,7 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 
 	return rc;
 }
+EXPORT_SYMBOL(dsi_panel_update_backlight);
 
 static int dsi_panel_update_pwm_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
@@ -742,7 +810,7 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	if (panel->host_config.ext_bridge_mode)
 		return 0;
 
-	DSI_DEBUG("backlight type:%d lvl:%d\n", bl->type, bl_lvl);
+	DSI_DEBUG("[Display] backlight type:%d lvl:%d\n", bl->type, bl_lvl);
 	switch (bl->type) {
 	case DSI_BACKLIGHT_WLED:
 		rc = backlight_device_set_brightness(bl->raw_bd, bl_lvl);
@@ -1830,6 +1898,9 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command",
 	"qcom,mdss-dsi-qsync-on-commands",
 	"qcom,mdss-dsi-qsync-off-commands",
+	"qcom,mdss-dsi-aod-lp1-command",
+	"qcom,mdss-dsi-1frame-command",
+	"qcom,mdss-dsi-20frame-command",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1856,6 +1927,9 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command-state",
 	"qcom,mdss-dsi-qsync-on-commands-state",
 	"qcom,mdss-dsi-qsync-off-commands-state",
+	"qcom,mdss-dsi-aod-lp1-command-state",
+	"qcom,mdss-dsi-1frame-command-state",
+	"qcom,mdss-dsi-20frame-command-state",
 };
 
 static int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -2234,14 +2308,22 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel)
 	int rc = 0;
 	const char *data;
 	struct dsi_parser_utils *utils = &panel->utils;
-	char *reset_gpio_name, *mode_set_gpio_name;
+	char *reset_gpio_name, *mode_set_gpio_name, *vddr_enable_gpio_name;
 
 	if (!strcmp(panel->type, "primary")) {
 		reset_gpio_name = "qcom,platform-reset-gpio";
 		mode_set_gpio_name = "qcom,panel-mode-gpio";
+		vddr_enable_gpio_name = "qcom,platform-vddr-enable-gpio";
 	} else {
 		reset_gpio_name = "qcom,platform-sec-reset-gpio";
 		mode_set_gpio_name = "qcom,panel-sec-mode-gpio";
+	}
+
+	panel->vddr_enable_gpio = utils->get_named_gpio(utils->data,
+					      vddr_enable_gpio_name, 0);
+
+	if (!gpio_is_valid(panel->vddr_enable_gpio)) {
+		DSI_ERR("[%s] failed get vddr enable gpio\n", panel->name);
 	}
 
 	panel->reset_config.reset_gpio = utils->get_named_gpio(utils->data,
@@ -3481,6 +3563,9 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 
 	mutex_init(&panel->panel_lock);
 
+	panel->panel_ready_for_cmd = false;
+	panel->asus_hbm_mode = 0;
+
 	return panel;
 error:
 	kfree(panel);
@@ -3679,7 +3764,7 @@ int dsi_panel_get_mode_count(struct dsi_panel *panel)
 			(panel->panel_mode_switch_enabled))
 		num_cmd_modes  = 1;
 	else
-		num_cmd_modes = num_cmd_modes * num_bit_clks;
+		num_cmd_modes = num_cmd_modes * num_bit_clks * num_dfps_rates;
 
 	panel->num_display_modes = num_video_modes + num_cmd_modes;
 
@@ -4079,10 +4164,15 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 		panel->power_mode != SDE_MODE_DPMS_LP2)
 		dsi_pwr_panel_regulator_mode_set(&panel->power_info,
 			"ibb", REGULATOR_MODE_IDLE);
-	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
-	if (rc)
-		DSI_ERR("[%s] failed to send DSI_CMD_SET_LP1 cmd, rc=%d\n",
-		       panel->name, rc);
+	
+	if(1 == zs670ks_aod_bl_mode) {
+		printk("[Display] Start transfer AOD MIPI High Command\n");
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_AOD_LP1);
+	} else if(0 == zs670ks_aod_bl_mode){
+		printk("[Display] Start transfer AOD MIPI Low Command\n");
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
+	}
+
 exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
@@ -4604,4 +4694,60 @@ int dsi_panel_post_unprepare(struct dsi_panel *panel)
 error:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
+}
+
+int dsi_panel_asus_switch_fps(struct dsi_panel *panel)
+{
+	int rc = 0;
+	char fps_90_cmd[2]={0x60,0x10};
+	char fps_60_cmd[2]={0x60,0x00};
+
+	if (!panel || !panel->dfps_caps.dfps_support || asus_display_in_normal_off()) {
+		pr_err("[Display] invalid operation to set fps\n");
+		return -EINVAL;
+	}
+
+	pr_err("[Display] set panel fps %d command\n", asus_current_fps);
+
+	if ( 90 == asus_current_fps ) {
+		asus_display_set_tcon_cmd(fps_90_cmd,sizeof(fps_90_cmd),0);
+	} else if ( 60  == asus_current_fps ) {
+		asus_display_set_tcon_cmd(fps_60_cmd,sizeof(fps_60_cmd),0);
+	} else {
+		pr_err("[Display] don't match any avaiable fps.\n");
+	}
+
+	return rc;
+}
+
+int dsi_panel_set_dimming_speed(struct dsi_panel *panel,int val)
+{
+	int rc = 0;
+
+	if (!panel) {
+		DSI_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized)
+		goto exit;
+
+	if( 1 == val ) {
+		printk("[Display] start set dsi_panel_set_dimming_speed 1 \n");
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_DIMMING_SPEED_1FRAME);
+	}else if ( 20 == val ){
+		printk("[Display] start set dsi_panel_set_dimming_speed 20 \n");
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_DIMMING_SPEED_20FRAME);
+	} else {
+		printk("[Display]  set dsi_panel_set_dimming_speed invalid val \n");
+	}
+
+	if (rc)
+		DSI_ERR("[%s] failed to dsi_panel_set_dimming_speed, rc=%d\n",
+		       panel->name, rc);
+exit:
+	mutex_unlock(&panel->panel_lock);
+	return rc;
+
 }
