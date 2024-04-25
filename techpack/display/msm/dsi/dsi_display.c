@@ -120,6 +120,7 @@ bool asus_display_in_aod(void)
 	if (asus_display_panel_valid()) {
 		switch (g_display->panel->power_mode) {
 		case SDE_MODE_DPMS_LP1:
+			return true;
 		case SDE_MODE_DPMS_LP2:
 			return true;
 		case SDE_MODE_DPMS_ON:
