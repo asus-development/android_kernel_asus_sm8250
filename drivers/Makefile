@@ -192,3 +192,11 @@ obj-$(CONFIG_UNISYS_VISORBUS)	+= visorbus/
 obj-$(CONFIG_SIOX)		+= siox/
 obj-$(CONFIG_GNSS)		+= gnss/
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
+
+#Tuxera
+ifdef CONFIG_TUXERA_USERDEBUG
+obj-y				+= tuxera/exfat/userdebug/64/objects/
+else ifdef CONFIG_TUXERA_ARM64
+obj-y				+= tuxera/exfat/user/64/objects/
+obj-y				+= tuxera/tntfs/user/64/objects/
+endif
