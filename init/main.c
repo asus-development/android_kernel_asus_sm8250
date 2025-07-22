@@ -147,6 +147,275 @@ static char *ramdisk_execute_command;
 bool static_key_initialized __read_mostly;
 EXPORT_SYMBOL_GPL(static_key_initialized);
 
+#ifdef ZS670KS
+int g_ftm_mode = 0;
+EXPORT_SYMBOL(g_ftm_mode);
+
+static int set_ftm_mode(char *str)
+{
+	if ( strcmp("1", str) == 0 )
+		g_ftm_mode = 1;
+	else
+		g_ftm_mode = 0;
+
+	printk("androidboot.pre-ftm= %d\n",  g_ftm_mode);
+	return 0;
+}
+__setup("androidboot.pre-ftm=", set_ftm_mode);
+
+// ASUS_BSP +++ get permissive status
+int permissive_enable = 0;
+EXPORT_SYMBOL(permissive_enable);
+static int get_permissive_status(char *str)
+{
+
+	if( strcmp("permissive", str) == 0 )
+	{
+		permissive_enable = 1;
+		printk("permissive = %d\n", permissive_enable);
+	}
+
+	return 0;
+}
+__setup("androidboot.selinux=", get_permissive_status);
+// ASUS_BSP --- get permissive status
+
+// ASUS_BSP +++ Add for asus debug
+int g_user_dbg_mode = 1;
+EXPORT_SYMBOL(g_user_dbg_mode);
+
+static int set_user_dbg_mode(char *str)
+{
+	if (strcmp("y", str) == 0)
+		g_user_dbg_mode = 1;
+	else
+		g_user_dbg_mode = 0;
+
+	g_user_dbg_mode = 1;
+	printk("Kernel dbg mode = %d\n", g_user_dbg_mode);
+	return 0;
+}
+__setup("dbg=", set_user_dbg_mode);
+// ASUS_BSP --- Add for asus debug
+
+// ASUS_BSP +++
+bool g_is_country_code_EU = false;
+bool g_is_country_code_RU = false;
+EXPORT_SYMBOL(g_is_country_code_EU);
+EXPORT_SYMBOL(g_is_country_code_RU);
+static int check_country_code(char *str)
+{
+
+	if ( strcmp("EU", str) == 0 ) {
+		g_is_country_code_EU = true;
+	} else if ( strcmp("RU", str) == 0 ) {
+		g_is_country_code_RU = true;
+	}
+
+	printk("country code= = %s\n", str);
+	return 0;
+}
+__setup("androidboot.country_code=", check_country_code);
+// ASUS_BSP ---
+
+//ASUS_SZ_BSP 2019/11/19 Cassie :get value from cmdline+++
+enum DEVICE_HWID g_ASUS_hwID = HW_REV_INVALID;
+EXPORT_SYMBOL(g_ASUS_hwID);
+static int set_hardware_id(char *str)
+{
+	if ( strcmp("0", str) == 0 )
+		{
+			g_ASUS_hwID = HW_REV_EVB;
+			printk("Kernel HW ID = ZS670KS_EVB\n");
+		}
+	else if ( strcmp("1", str) == 0 )
+		{
+			g_ASUS_hwID = HW_REV_SR;
+			printk("Kernel HW ID = ZS670KS_SR\n");
+		}
+	else if ( strcmp("2", str) == 0 )
+		{
+			g_ASUS_hwID = HW_REV_ER2;
+			printk("Kernel HW ID = HW_REV_ER2\n");
+		}
+	else if ( strcmp("3", str) == 0 )
+		{
+			g_ASUS_hwID = HW_REV_SR2;
+			printk("Kernel HW ID = ZS670KS_SR2\n");
+		}
+	else if ( strcmp("4", str) == 0 )
+		{
+			g_ASUS_hwID = HW_REV_SR3;
+			printk("Kernel HW ID = ZS670KS_SR3\n");
+		}
+	else if ( strcmp("5", str) == 0 )
+		{
+			g_ASUS_hwID = HW_REV_ER;
+			printk("Kernel HW ID = ZS670KS_ER\n");
+		}
+	else if ( strcmp("6", str) == 0 )
+		{
+			g_ASUS_hwID = HW_REV_PR;
+			printk("Kernel HW ID = HW_REV_PR\n");
+		}
+	else if ( strcmp("7", str) == 0 )
+		{
+			g_ASUS_hwID = HW_REV_MP;
+			printk("Kernel HW ID = ZS670KS_MP\n");
+		}
+
+	printk("g_Asus_hwID = %d\n", g_ASUS_hwID);
+	return 0;
+}
+__setup("androidboot.id.stage=", set_hardware_id);
+
+int zs670ks_panel_id = 0;
+EXPORT_SYMBOL(zs670ks_panel_id);
+static int set_zs670ks_panel_id(char *str)
+{
+	if ( strcmp("1", str) == 0 )
+	{
+		zs670ks_panel_id = 1;
+	}else if( strcmp("2", str) == 0 )
+	{
+		zs670ks_panel_id = 2;
+	}else
+	{
+		printk("[Display]: No match panel id use 1 default\n");
+		zs670ks_panel_id = 1;
+	}
+
+	printk("Kernel Panel ID  is %d\n",zs670ks_panel_id);
+	return 0;
+}
+__setup("androidboot.id.panel=", set_zs670ks_panel_id);
+
+enum DEVICE_PROJID g_ASUS_prjID = PROJECT_INVALID;
+EXPORT_SYMBOL(g_ASUS_prjID);
+static int set_project_id(char *str)
+{
+	if ( strcmp("4", str) == 0 )
+		{
+			g_ASUS_prjID = PROJECT_ZF7_DXO;
+			printk("Kernel PROJECT ID = PROJECT_ZF7_DXO\n");
+		}
+	else if ( strcmp("6", str) == 0 )
+		{
+			g_ASUS_prjID = PROJECT_ZF7_8250_PLUS;
+			printk("Kernel PROJECT ID = PROJECT_ZF7_8250_PLUS\n");
+		}
+	else if ( strcmp("7", str) == 0 )
+		{
+			g_ASUS_prjID = PROJECT_ZF7_8250;
+			printk("Kernel PROJECT ID = PROJECT_ZF7_8250\n");
+		}
+	printk("g_Asus_prjID = %d\n", g_ASUS_prjID);
+	return 0;
+}
+__setup("androidboot.id.prj=", set_project_id);
+
+enum DEVICE_SKUID g_ASUS_skuID = SKU_ID_INVALID;
+EXPORT_SYMBOL(g_ASUS_skuID);
+static int set_sku_id(char *str)
+{
+	if ( strcmp("0", str) == 0 )
+		{
+			g_ASUS_skuID = SKU_ID_0;
+			printk("Kernel SKU ID = 0 (SKU1)\n");
+		}
+	else if ( strcmp("1", str) == 0 )
+		{
+			g_ASUS_skuID = SKU_ID_1;
+			printk("Kernel SKU ID = 1 (SKU2)\n");
+		}
+	else if ( strcmp("2", str) == 0 )
+		{
+			g_ASUS_skuID = SKU_ID_2;
+			printk("Kernel SKU ID = 2 (SKU3)\n");
+		}
+	else if ( strcmp("3", str) == 0 )
+		{
+			g_ASUS_skuID = SKU_ID_3;
+			printk("Kernel SKU ID = 3 (SKU4)\n");
+		}
+	else if ( strcmp("4", str) == 0 )
+		{
+			g_ASUS_skuID = SKU_ID_4;
+			printk("Kernel SKU ID = 4 (SKU5)\n");
+		}
+	else if ( strcmp("5", str) == 0 )
+		{
+			g_ASUS_skuID = SKU_ID_5;
+			printk("Kernel SKU ID = 5 (SKU6)\n");
+		}
+	else if ( strcmp("6", str) == 0 )
+		{
+			g_ASUS_skuID = SKU_ID_6;
+			printk("Kernel SKU ID = 6 (SKU7)\n");
+		}
+	else if ( strcmp("7", str) == 0 )
+		{
+			g_ASUS_skuID = SKU_ID_7;
+			printk("Kernel SKU ID = 7 (SKU8)\n");
+		}
+
+	printk("g_Asus_skuID = %d\n", g_ASUS_skuID);
+	return 0;
+}
+__setup("androidboot.id.sku=", set_sku_id);
+
+enum DEVICE_NFCID g_ASUS_nfcID = NFC_VENDOR_INVALID;
+EXPORT_SYMBOL(g_ASUS_nfcID);
+static int set_nfc_id(char *str)
+{
+	if ( strcmp("0", str) == 0 )
+		{
+			g_ASUS_nfcID = NFC_NOT_SUPPORT;
+			printk("Kernel NFC not support\n");
+		}
+	else if ( strcmp("1", str) == 0 )
+		{
+			g_ASUS_nfcID = NFC_SUPPORT;
+			printk("Kernel NFC support\n");
+		}
+
+	printk("g_Asus_nfcID = %d\n", g_ASUS_nfcID);
+	return 0;
+}
+__setup("androidboot.id.nfc=", set_nfc_id);
+
+//[+++]ASUS : Add for kernel charger mode
+bool g_Charger_mode = false;
+static int set_charger_mode(char *str)
+{
+	if ( strcmp("charger", str) == 0 )
+		g_Charger_mode = true;
+	else
+		g_Charger_mode = false;
+
+	printk("g_Charger_mode = %d\n", g_Charger_mode);
+	return 0;
+}
+__setup("androidboot.mode=", set_charger_mode);
+EXPORT_SYMBOL(g_Charger_mode);
+//[---]ASUS : Add for kernel charger mode
+
+bool g_Recovery_mode = false;
+static int set_recovery_mode(char *str)
+{
+	if ( strcmp("1", str) == 0 )
+		g_Recovery_mode = true;
+	else
+		g_Recovery_mode = false;
+
+	printk("g_Recovery_mode = %d\n", g_Recovery_mode);
+	return 0;
+}
+__setup("recovery=", set_recovery_mode);
+EXPORT_SYMBOL(g_Recovery_mode);
+#endif
+//ASUS_SZ_BSP 2019/11/19 Cassie :get value from cmdline---
+
 /*
  * If set, this is an indication to the drivers that reset the underlying
  * device before going ahead with the initialization otherwise driver might
