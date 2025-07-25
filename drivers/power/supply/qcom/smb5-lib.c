@@ -2305,6 +2305,7 @@ int smblib_vconn_regulator_is_enabled(struct regulator_dev *rdev)
 //todo
 //extern int chg_set_src_cap(void);
 //extern int cam_sensor_is_power_up(void);
+extern int cam_flash_battery_low(int enable);
 int smblib_vbus_regulator_enable(struct regulator_dev *rdev)
 {
 	struct smb_charger *chg = rdev_get_drvdata(rdev);
@@ -2360,10 +2361,12 @@ int smblib_vbus_regulator_enable(struct regulator_dev *rdev)
 	
 	if(batt_capacity <= 15){
 		//todo
+		cam_flash_battery_low(1);
 		asus_extcon_set_state_sync(smbchg_dev->reversechg_extcon, 1);
 	}
 	else{
 		//todo
+		cam_flash_battery_low(0);
 		asus_extcon_set_state_sync(smbchg_dev->reversechg_extcon, 0);
 		schedule_delayed_work(&smbchg_dev->asus_reverse_charge_check_camera, 0);
 	}
@@ -2401,6 +2404,7 @@ int smblib_vbus_regulator_disable(struct regulator_dev *rdev)
 	default_src_caps[0] = 0x360190c8;
 
 	//todo
+	cam_flash_battery_low(0);
 	asus_extcon_set_state_sync(smbchg_dev->reversechg_extcon, 0);
 	
 	return 0;
@@ -7598,6 +7602,7 @@ void asus_reverse_charge_check_camera(struct work_struct *work)
 	
 	if(batt_capacity <= 15){
 		//todo
+		cam_flash_battery_low(1);
 		asus_extcon_set_state_sync(smbchg_dev->reversechg_extcon, 1);
 	}
 	else{

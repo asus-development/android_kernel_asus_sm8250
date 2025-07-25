@@ -12,6 +12,7 @@
 #include "cam_trace.h"
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
+#include "asus_cam_sensor.h"
 
 static void cam_sensor_update_req_mgr(
 	struct cam_sensor_ctrl_t *s_ctrl,
@@ -885,8 +886,7 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			s_ctrl->soc_info.index,
 			s_ctrl->sensordata->slave_info.sensor_slave_addr,
 			s_ctrl->sensordata->slave_info.sensor_id);
-
-		cam_sensor_free_power_reg_rsc(s_ctrl);
+		asus_cam_sensor_init(s_ctrl);//ASUS_BSP Zhengwei "porting sensor ATD"
 		rc = cam_sensor_power_down(s_ctrl);
 		if (rc < 0) {
 			CAM_ERR(CAM_SENSOR, "fail in Sensor Power Down");
@@ -1308,6 +1308,8 @@ int cam_sensor_power_up(struct cam_sensor_ctrl_t *s_ctrl)
 	if (rc < 0)
 		CAM_ERR(CAM_SENSOR, "cci_init failed: rc: %d", rc);
 
+	s_ctrl->power_state = 1;//ASUS_BSP Zhengwei "porting sensor ATD"
+	CAM_INFO(CAM_SENSOR, "SENSOR POWER UP X sensor_id(0x%x) index(%d)",s_ctrl->sensordata->slave_info.sensor_id,s_ctrl->soc_info.index);
 	return rc;
 }
 
@@ -1346,7 +1348,8 @@ int cam_sensor_power_down(struct cam_sensor_ctrl_t *s_ctrl)
 	}
 
 	camera_io_release(&(s_ctrl->io_master_info));
-
+	s_ctrl->power_state = 0;//ASUS_BSP Zhengwei "porting sensor ATD"
+	CAM_INFO(CAM_SENSOR, "SENSOR POWER DOWN X sensor_id(0x%x) index(%d)",s_ctrl->sensordata->slave_info.sensor_id,s_ctrl->soc_info.index);
 	return rc;
 }
 
