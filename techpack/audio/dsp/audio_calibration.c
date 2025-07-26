@@ -13,6 +13,14 @@
 #include <dsp/audio_calibration.h>
 #include <dsp/audio_cal_utils.h>
 
+#ifdef ZS670KS
+#include <linux/input.h>
+#endif
+
+/* ASUS_BSP +++ EU/nonEU */
+extern void set_asus_eu_type(int eu_type);
+/* ASUS_BSP --- */
+
 struct audio_cal_client_info {
 	struct list_head		list;
 	struct audio_cal_callbacks	*callbacks;
@@ -27,6 +35,11 @@ struct audio_cal_info {
 
 static struct audio_cal_info	audio_cal;
 
+//ASUS_BSP +++
+#ifdef ZS670KS
+struct input_dev *audiorecord_mic_using_dev;
+#endif
+//ASUS_BSP ---
 
 static bool callbacks_are_equal(struct audio_cal_callbacks *callback1,
 				struct audio_cal_callbacks *callback2)
@@ -386,12 +399,36 @@ static int audio_cal_release(struct inode *inode, struct file *f)
 	return ret;
 }
 
+//ASUS_BSP +++
+#ifdef ZS670KS
+static void send_audiorecord_mic_using(struct input_dev *dev, int state){
+	if (state == 1) {
+		input_report_switch(dev, SW_AUDIORECORD_START, 1);
+	} else {
+		input_report_switch(dev, SW_AUDIORECORD_STOP, 1);
+	}
+	input_sync(dev);
+
+	//clear start/stop switch for next event
+	input_report_switch(dev, SW_AUDIORECORD_START, 0);
+	input_report_switch(dev, SW_AUDIORECORD_STOP, 0);
+	input_sync(dev);
+}
+#endif
+//ASUS_BSP ---
+
 static long audio_cal_shared_ioctl(struct file *file, unsigned int cmd,
 							void __user *arg)
 {
 	int ret = 0;
 	int32_t size;
 	struct audio_cal_basic *data = NULL;
+#ifdef ZS670KS
+    int audiorecord_mic_using = 0;
+#endif
+	/* ASUS_BSP +++ EU/nonEU */
+	int is_non_eu = 0;
+	/* ASUS_BSP --- EU/nonEU */
 
 	pr_debug("%s\n", __func__);
 
@@ -403,6 +440,32 @@ static long audio_cal_shared_ioctl(struct file *file, unsigned int cmd,
 	case AUDIO_GET_CALIBRATION:
 	case AUDIO_POST_CALIBRATION:
 		break;
+	//ASUS_BSP +++
+	case AUDIO_SET_AUDIORECORD_MIC_USING:
+#ifdef ZS670KS
+		mutex_lock(&audio_cal.cal_mutex[AUDIORECORD_MIC_USING_TYPE]);
+		if (copy_from_user(&audiorecord_mic_using, (void *)arg, sizeof(audiorecord_mic_using))) {
+			pr_err("%s: Could not copy audiorecord_mic_using from user\n", __func__);
+			ret = -EFAULT;
+		}
+		pr_err("%s: AUDIO_SET_AUDIORECORD_MIC_USING audiorecord_mic_using %d\n", __func__, audiorecord_mic_using);
+		send_audiorecord_mic_using(audiorecord_mic_using_dev,audiorecord_mic_using);
+		mutex_unlock(&audio_cal.cal_mutex[AUDIORECORD_MIC_USING_TYPE]);
+#endif
+		goto done;
+	//ASUS_BSP ---
+	/* ASUS_BSP +++ EU/nonEU */
+	case AUDIO_SET_EU_NONEU:
+		mutex_lock(&audio_cal.cal_mutex[AUDIO_SET_EU_NONEU_TYPE]);
+		if (copy_from_user(&is_non_eu, (void *)arg, sizeof(is_non_eu))) {
+			pr_err("%s: Could not copy EU/nonEU info from user\n", __func__);
+			ret = -EFAULT;
+		}
+		printk("%s: EU_or_nonEU=%d (EU:0, nonEU:1)\n", __func__, is_non_eu);
+		set_asus_eu_type(is_non_eu);
+		mutex_unlock(&audio_cal.cal_mutex[AUDIO_SET_EU_NONEU_TYPE]);
+		goto done;
+	/* ASUS_BSP --- EU/nonEU */
 	default:
 		pr_err("%s: ioctl not found!\n", __func__);
 		ret = -EFAULT;
@@ -531,6 +594,13 @@ static long audio_cal_ioctl(struct file *f,
 							204, compat_uptr_t)
 #define AUDIO_POST_CALIBRATION32	_IOWR(CAL_IOCTL_MAGIC, \
 							205, compat_uptr_t)
+#define AUDIO_SET_AUDIORECORD_MIC_USING32	_IOWR(CAL_IOCTL_MAGIC, \
+							223, compat_uptr_t)
+
+/* ASUS_BSP +++ EU/nonEU */
+#define AUDIO_SET_EU_NONEU32		_IOWR(CAL_IOCTL_MAGIC, \
+							235, compat_uptr_t)
+/* ASUS_BSP --- EU/nonEU */
 
 static long audio_cal_compat_ioctl(struct file *f,
 		unsigned int cmd, unsigned long arg)
@@ -557,6 +627,16 @@ static long audio_cal_compat_ioctl(struct file *f,
 	case AUDIO_POST_CALIBRATION32:
 		cmd64 = AUDIO_POST_CALIBRATION;
 		break;
+//ASUS_BSP +++
+	case AUDIO_SET_AUDIORECORD_MIC_USING32:
+		cmd64 = AUDIO_SET_AUDIORECORD_MIC_USING;
+		break;
+//ASUS_BSP +++
+/* ASUS_BSP +++ EU/nonEU */
+	case AUDIO_SET_EU_NONEU32:
+		cmd64 = AUDIO_SET_EU_NONEU;
+		break;
+/* ASUS_BSP --- EU/nonEU */
 	default:
 		pr_err("%s: ioctl not found!\n", __func__);
 		ret = -EFAULT;
@@ -588,10 +668,25 @@ struct miscdevice audio_cal_misc = {
 int __init audio_cal_init(void)
 {
 	int i = 0;
+#ifdef ZS670KS
+    int ret = 0;
+#endif
 
 	pr_debug("%s\n", __func__);
 
-	cal_utils_init();
+//ASUS_BSP +++
+#ifdef ZS670KS
+	audiorecord_mic_using_dev = input_allocate_device();
+	if (!audiorecord_mic_using_dev)
+		pr_err("%s: [Inputevent]failed to allocate inputevent audiorecord_mic_using_dev\n", __func__);
+	audiorecord_mic_using_dev->name = "audiorecord_mic_using";
+	input_set_capability(audiorecord_mic_using_dev, EV_SW, SW_AUDIORECORD_START);
+	input_set_capability(audiorecord_mic_using_dev, EV_SW, SW_AUDIORECORD_STOP);
+	ret = input_register_device(audiorecord_mic_using_dev);
+	if (ret < 0)
+		pr_err("%s: [Inputevent]failed to register inputevent audiorecord_mic_using_dev\n", __func__);
+#endif
+//ASUS_BSP ---
 	memset(&audio_cal, 0, sizeof(audio_cal));
 	mutex_init(&audio_cal.common_lock);
 	for (; i < MAX_CAL_TYPES; i++) {
@@ -607,6 +702,12 @@ void audio_cal_exit(void)
 	int i = 0;
 	struct list_head *ptr, *next;
 	struct audio_cal_client_info *client_info_node;
+
+//ASUS_BSP +++
+#ifdef ZS670KS
+	input_free_device(audiorecord_mic_using_dev);
+#endif
+//ASUS_BSP ---
 
 	for (; i < MAX_CAL_TYPES; i++) {
 		list_for_each_safe(ptr, next,
